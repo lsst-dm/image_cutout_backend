@@ -24,6 +24,9 @@ __all__ = ["RgbImageCutout"]
 import dataclasses
 from uuid import uuid4
 
+from astropy.visualization import make_lupton_rgb
+import PIL
+
 from lsst.daf.butler import DatasetRef
 from lsst.resources import ResourcePath
 
@@ -42,24 +45,40 @@ class RgbExtraction:
     """The three color channels as image cutouts.
     """
 
-    def write_png(self):
+    def create_rgb_image(self, Q=10, stretch=0.5):
+        """Combine the RGB channels into a color image.
+
+        Parameters
+        ----------
+        Q : `int`, optional
+            The asinh softening parameter to apply to the channels.
+        stretch : `float`, optional
+            The linear stretch to apply to the channels.
+
+        Returns
+        -------
+        image : `numpy.ndarray`, (3, N)
+            The color image, at 8-bits per pixel.
+        """
+        return make_lupton_rgb(self.r.cutout.image.array,
+                               self.g.cutout.image.array,
+                               self.b.cutout.image.array,
+                               Q=Q, stretch=stretch)
+
+    def write_png(self, path):
         """Write the cutouts to a PNG file.
 
-        Each channel's metata is written to 
+        Each channel's metata is written to EXIF fields in the output.
 
         Parameters
         ----------
         path : `str`
-            Local path to the file.
-
-        Returns
-        -------
-
+            Local path to the file to write.
         """
-        # image = PIL.Image.fromarray(img)
-        # with io.BytesIO() as output:
-        #     image.save(output, format="PNG")
-        pass
+        data = self.create_rgb_image()
+        image = PIL.Image.fromarray(data)
+        image.info = self.r.metadata.toString()
+        image.save(path, format="png", pnginfo=image.info)
 
 
 class RgbImageCutout:
@@ -95,7 +114,7 @@ class RgbImageCutout:
         return self.write_png(result)
 
     def write_png(self, extract_result: RgbExtraction) -> ResourcePath:
-        """Write an `RgbExtraction` to a remote PNG file in `output_root`.
+        """Write an `RgbExtraction` to a remote PNG file .
 
         Parameters
         ----------
@@ -108,8 +127,8 @@ class RgbImageCutout:
             Full path to the saved cutout.
         """
         output_uuid = uuid4()
-        remote_uri = self.output_root.join(output_uuid.hex + ".png")
-        with ResourcePath.temporary_uri(prefix=self.temporary_root, suffix=".png") as tmp_uri:
-            extract_result.write_fits(tmp_uri.ospath)
+        remote_uri = self.backend.output_root.join(output_uuid.hex + ".png")
+        with ResourcePath.temporary_uri(prefix=self.backend.temporary_root, suffix=".png") as tmp_uri:
+            extract_result.write_png(tmp_uri.ospath)
             remote_uri.transfer_from(tmp_uri, transfer="copy")
         return remote_uri

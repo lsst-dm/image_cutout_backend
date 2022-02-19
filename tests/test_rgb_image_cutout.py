@@ -23,6 +23,9 @@ import os.path
 import tempfile
 import unittest
 
+import numpy as np
+import PIL
+
 import lsst.utils.tests
 from lsst.image_cutout_backend import ImageCutoutBackend, RgbImageCutout, projection_finders, stencils
 
@@ -54,25 +57,43 @@ class TestRgbImageCutouts(lsst.utils.tests.TestCase):
         dataId['band'] = 'i'
         self.dataRefR = self.butler.registry.findDataset("deepCoadd_calexp", dataId=dataId)
 
-    def test_extract_refs(self):
+    def test_extract_ref(self):
         """Extract images with g->B, r->G, i->R."""
         with tempfile.TemporaryDirectory() as tempdir:
             backend = ImageCutoutBackend(self.butler, self.projectionFinder, tempdir)
             cutoutBackend = RgbImageCutout(backend)
             result = cutoutBackend.extract_ref(self.stencil, self.dataRefR, self.dataRefG, self.dataRefB)
 
+            # Check that the bboxes are all the same size.
             box = result.r.cutout.getBBox()
             self.assertEqual(box, result.g.cutout.getBBox())
             self.assertEqual(box, result.b.cutout.getBBox())
             self.assertEqual(box.width, 101)
             self.assertEqual(box.height, 101)
             # The galaxy should be near the center of the image.
-            self.assertFloatsAlmostEqual(result.r.cutout.image.array[50, 49], 2.5095553398132324)
-            self.assertFloatsAlmostEqual(result.g.cutout.image.array[50, 49], 2.0735855102539062)
-            self.assertFloatsAlmostEqual(result.b.cutout.image.array[50, 49], 1.2568331956863403)
+            self.assertFloatsAlmostEqual(result.r.cutout.image.array[50, 49], 2.3940088748931885)
+            self.assertFloatsAlmostEqual(result.g.cutout.image.array[50, 49], 2.083247661590576)
+            self.assertFloatsAlmostEqual(result.b.cutout.image.array[50, 49], 1.2457562685012817)
 
-    def test_process_refs_png(self):
+    def test_process_ref_png(self):
+        """Extract images with g->B, r->G, i->R and test that a PNG is saved.
+        """
+        with tempfile.TemporaryDirectory() as tempdir:
+            backend = ImageCutoutBackend(self.butler, self.projectionFinder, tempdir)
+            cutoutBackend = RgbImageCutout(backend)
+            result = cutoutBackend.process_ref_png(self.stencil, self.dataRefR, self.dataRefG, self.dataRefB)
 
+            self.assertTrue(result.exists())
+            expected_image_path = os.path.join(os.path.dirname(__file__),
+                                               "data/galaxy-test-Q_10-stretch_0.5.png")
+            expected_image = PIL.Image.open(expected_image_path)
+            result_image = PIL.Image.open(result)
+            # Check the pixel values for equality; we test metadata later.
+            np.testing.assert_array_equal(np.asarray(expected_image), np.asarray(result_image))
+
+            result_image.load()  # PIL does not guarantee that EXIF data is present until load().
+            import ipdb; ipdb.set_trace();
+            print(result_image.info)
 
 
 if __name__ == "__main__":
